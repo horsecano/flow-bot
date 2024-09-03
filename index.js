@@ -9,8 +9,6 @@ const dbName = "attendanceDB";
 let db;
 
 async function connectToMongoDB() {
-  console.log("connectToMongoDB");
-
   try {
     const client = new MongoClient(mongoUri);
     await client.connect();
@@ -84,7 +82,7 @@ async function startDailyChallenge() {
 
   if (!attendanceRecord[currentWeek]) {
     console.log("No existing attendance record found. Initializing a new one.");
-    const channelId = "C07KE8YLERZ";
+    const channelId = "C07JKNRSK7H";
     const botUserId = "U07GELRJTNY";
     await initializeWeekRecord(channelId, botUserId);
   }
@@ -105,7 +103,7 @@ async function startDailyChallenge() {
   });
 
   const result = await app.client.chat.postMessage({
-    channel: "C07KE8YLERZ",
+    channel: "C07JKNRSK7H",
     text: messageText,
   });
 
@@ -117,7 +115,7 @@ cron.schedule("1 0 * * *", async () => {
 
   if (currentDate.weekday === 1) {
     // 월요일
-    const channelId = "C07KE8YLERZ";
+    const channelId = "C07JKNRSK7H";
     const botUserId = "U07GELRJTNY";
     await initializeWeekRecord(channelId, botUserId); // 새로운 주의 기록을 초기화
   } else if (currentDate.weekday >= 2 && currentDate.weekday <= 5) {
@@ -126,7 +124,13 @@ cron.schedule("1 0 * * *", async () => {
   }
 });
 
+app.message("테스트", async ({ message, say }) => {
+  console.log("정상");
+  say("정상");
+});
+
 app.message("챌린지 업데이트", async ({ message, say }) => {
+  console.log(message);
   const currentDate = DateTime.local().setZone("Asia/Seoul");
   const currentWeek = `Week ${currentDate.weekNumber}`;
 
@@ -164,6 +168,7 @@ app.message("챌린지 업데이트", async ({ message, say }) => {
     await say("챌린지 메시지 생성 중 오류가 발생했습니다.");
   }
 });
+
 app.event("app_mention", async ({ event, say, client }) => {
   const currentDate = DateTime.local().setZone("Asia/Seoul");
 
