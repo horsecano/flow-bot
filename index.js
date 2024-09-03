@@ -31,7 +31,6 @@ const app = new App({
 });
 
 let attendanceRecord = {};
-let originalMessageTs = null;
 
 async function saveAttendanceRecordToDB(week) {
   const collection = db.collection("attendanceRecords");
@@ -51,6 +50,21 @@ async function loadAttendanceRecordFromDB(week) {
   } else {
     attendanceRecord[week] = null;
   }
+}
+
+async function saveMessageTsToDB(week, ts) {
+  const collection = db.collection("messageTimestamps");
+  await collection.updateOne(
+    { week: week },
+    { $set: { ts: ts } },
+    { upsert: true }
+  );
+}
+
+async function loadMessageTsFromDB(week) {
+  const collection = db.collection("messageTimestamps");
+  const record = await collection.findOne({ week: week });
+  return record ? record.ts : null;
 }
 
 async function initializeWeekRecord(channelId, botUserId) {
@@ -82,7 +96,7 @@ async function startDailyChallenge() {
 
   if (!attendanceRecord[currentWeek]) {
     console.log("No existing attendance record found. Initializing a new one.");
-    const channelId = "C07JKNRSK7H";
+    const channelId = "C07KE8YLERZ";
     const botUserId = "U07GELRJTNY";
     await initializeWeekRecord(channelId, botUserId);
   }
@@ -102,151 +116,105 @@ async function startDailyChallenge() {
     ].join("")}\n`;
   });
 
+  // Post a new message for the daily challenge
   const result = await app.client.chat.postMessage({
-    channel: "C07JKNRSK7H",
+    channel: "C07KE8YLERZ",
     text: messageText,
   });
 
-  originalMessageTs = result.ts;
+  const messageTs = result.ts;
+  await saveMessageTsToDB(currentWeek, messageTs); // Save the timestamp to the database
 }
 
 cron.schedule("1 0 * * *", async () => {
   const currentDate = DateTime.local().setZone("Asia/Seoul");
 
   if (currentDate.weekday === 1) {
-    // 월요일
-    const channelId = "C07JKNRSK7H";
+    const channelId = "C07KE8YLERZ";
     const botUserId = "U07GELRJTNY";
-    await initializeWeekRecord(channelId, botUserId); // 새로운 주의 기록을 초기화
+    await initializeWeekRecord(channelId, botUserId); // Initialize new week's record
   } else if (currentDate.weekday >= 2 && currentDate.weekday <= 5) {
-    // 화요일 ~ 금요일
-    await startDailyChallenge(); // 기존 주의 기록을 이어서 진행
+    await startDailyChallenge(); // Continue with the current week's record
   }
 });
 
-app.message("테스트", async ({ message, say }) => {
-  console.log("정상");
-  say("정상");
-});
-
-app.message("챌린지 업데이트", async ({ message, say }) => {
-  console.log(message);
-  const currentDate = DateTime.local().setZone("Asia/Seoul");
-  const currentWeek = `Week ${currentDate.weekNumber}`;
-
-  await loadAttendanceRecordFromDB(currentWeek);
-
-  if (!attendanceRecord[currentWeek]) {
-    await say("현재 주차의 챌린지 기록이 없습니다.");
-    return;
-  }
-
-  const month = currentDate.month;
-  const week =
-    currentDate.weekNumber - currentDate.startOf("month").weekNumber + 1;
-  const day = currentDate.setLocale("ko").toFormat("cccc");
-
-  let messageText = `${month}월 ${week}주차 ${day} 인증 기록\n`;
-
-  const participants = Object.keys(attendanceRecord[currentWeek]);
-
-  participants.forEach((userName) => {
-    messageText += `${userName} : ${attendanceRecord[currentWeek][
-      userName
-    ].join("")}\n`;
-  });
-
-  try {
-    const result = await app.client.chat.postMessage({
-      channel: "C07KE8YLERZ",
-      text: messageText,
-    });
-
-    originalMessageTs = result.ts;
-  } catch (error) {
-    console.error("챌린지 메시지 생성 중 오류 발생:", error);
-    await say("챌린지 메시지 생성 중 오류가 발생했습니다.");
-  }
+app.message("챌린지 수동", async ({ message, say }) => {
+  console.log("Daily challenge triggered manually.");
+  await startDailyChallenge();
 });
 
 app.event("app_mention", async ({ event, say, client }) => {
-  const currentDate = DateTime.local().setZone("Asia/Seoul");
-
-  // Handle late night cases
-  if (currentDate.hour >= 23 && currentDate.minute >= 59) {
-    await say({
-      text: "오늘 챌린지 인증 마감 되었습니다.",
-      thread_ts: event.ts,
-    });
-    return;
-  }
-
-  // Check if the message contains a link
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const hasLink = urlRegex.test(event.text);
-
-  if (!hasLink) {
-    await say({
-      text: "인증이 실패했습니다. 쓰레드 링크를 포함해야 합니다.",
-      thread_ts: event.ts,
-    });
-    return;
-  }
-
-  const userId = event.user;
-  const userInfo = await client.users.info({ user: userId });
-  const userName = userInfo.user.real_name;
-
-  const currentWeek = `Week ${currentDate.weekNumber}`;
-  const month = currentDate.month;
-  const week =
-    currentDate.weekNumber - currentDate.startOf("month").weekNumber + 1;
-  const day = currentDate.setLocale("ko").toFormat("cccc");
-
-  await loadAttendanceRecordFromDB(currentWeek);
-
-  if (!attendanceRecord[currentWeek]) {
-    await say({
-      text: "챌린지가 아직 시작되지 않았습니다. '챌린지 시작'을 입력하세요.",
-      thread_ts: event.ts,
-    });
-    return;
-  }
-
-  const participants = Object.keys(attendanceRecord[currentWeek]);
-
-  if (!participants.includes(userName)) {
-    await say({
-      text: "참가자 이름을 확인해 주세요.",
-      thread_ts: event.ts,
-    });
-    return;
-  }
-
-  const today = currentDate.weekday - 1;
-
-  attendanceRecord[currentWeek][userName][today] = "✅";
-
-  let messageText = `${month}월 ${week}주차 ${day} 인증 기록\n`;
-  participants.forEach((name) => {
-    messageText += `${name} : ${attendanceRecord[currentWeek][name].join(
-      ""
-    )}\n`;
-  });
-
-  // Check if originalMessageTs is set
-  if (!originalMessageTs) {
-    console.error("Error: originalMessageTs is not set.");
-    await say(
-      "Error: Unable to update the message as originalMessageTs is not set."
-    );
-    return;
-  }
-
   try {
+    const currentDate = DateTime.local().setZone("Asia/Seoul");
+    const currentWeek = `Week ${currentDate.weekNumber}`;
+    const messageTs = await loadMessageTsFromDB(currentWeek);
+
+    if (!messageTs) {
+      await say("챌린지 메시지가 없습니다. 새로운 메시지를 게시해야 합니다.");
+      return;
+    }
+
+    if (currentDate.hour >= 23 && currentDate.minute >= 59) {
+      await say({
+        text: "오늘 챌린지 인증 마감 되었습니다.",
+        thread_ts: event.ts,
+      });
+      return;
+    }
+
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const hasLink = urlRegex.test(event.text);
+
+    if (!hasLink) {
+      await say({
+        text: "인증이 실패했습니다. 쓰레드 링크를 포함해야 합니다.",
+        thread_ts: event.ts,
+      });
+      return;
+    }
+
+    const userId = event.user;
+    const userInfo = await client.users.info({ user: userId });
+    const userName = userInfo.user.real_name;
+
+    await loadAttendanceRecordFromDB(currentWeek);
+
+    if (!attendanceRecord[currentWeek]) {
+      await say({
+        text: "챌린지가 아직 시작되지 않았습니다. '챌린지 시작'을 입력하세요.",
+        thread_ts: event.ts,
+      });
+      return;
+    }
+
+    const participants = Object.keys(attendanceRecord[currentWeek]);
+
+    if (!participants.includes(userName)) {
+      await say({
+        text: "참가자 이름을 확인해 주세요.",
+        thread_ts: event.ts,
+      });
+      return;
+    }
+
+    const today = currentDate.weekday - 1;
+    const week =
+      currentDate.weekNumber - currentDate.startOf("month").weekNumber + 1; // Correctly defining `week`
+    const day = currentDate.setLocale("ko").toFormat("cccc");
+
+    attendanceRecord[currentWeek][userName][today] = "✅";
+
+    let messageText = `${currentDate.month}월 ${week}주차 ${day} 인증 기록\n`;
+    participants.forEach((name) => {
+      messageText += `${name} : ${attendanceRecord[currentWeek][name].join(
+        ""
+      )}\n`;
+    });
+
+    // Update the existing message with the updated attendance record
     await client.chat.update({
       channel: event.channel,
-      ts: originalMessageTs,
+      ts: messageTs,
       text: messageText,
     });
 
@@ -258,8 +226,8 @@ app.event("app_mention", async ({ event, say, client }) => {
 
     await saveAttendanceRecordToDB(currentWeek);
   } catch (error) {
-    console.error("Error updating message:", error);
-    await say("There was an error updating the challenge message.");
+    console.error("Error during the app_mention event:", error);
+    await say("챌린지 메시지를 업데이트하는 중 오류가 발생했습니다.");
   }
 });
 
