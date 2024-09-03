@@ -172,6 +172,7 @@ app.message("챌린지 업데이트", async ({ message, say }) => {
 app.event("app_mention", async ({ event, say, client }) => {
   const currentDate = DateTime.local().setZone("Asia/Seoul");
 
+  // Handle late night cases
   if (currentDate.hour >= 23 && currentDate.minute >= 59) {
     await say({
       text: "오늘 챌린지 인증 마감 되었습니다.",
@@ -180,6 +181,7 @@ app.event("app_mention", async ({ event, say, client }) => {
     return;
   }
 
+  // Check if the message contains a link
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const hasLink = urlRegex.test(event.text);
 
@@ -223,21 +225,7 @@ app.event("app_mention", async ({ event, say, client }) => {
 
   const today = currentDate.weekday - 1;
 
-  // 이미 오늘 인증을 완료했는지 확인
-  if (attendanceRecord[currentWeek][userName][today] === "✅") {
-    await say({
-      text: "오늘 인증을 이미 완료했습니다.",
-      thread_ts: event.ts,
-    });
-    return;
-  }
-
-  for (let i = 0; i <= today; i++) {
-    if (attendanceRecord[currentWeek][userName][i] === "❌") {
-      attendanceRecord[currentWeek][userName][i] = "✅";
-      break;
-    }
-  }
+  attendanceRecord[currentWeek][userName][today] = "✅";
 
   let messageText = `${month}월 ${week}주차 ${day} 인증 기록\n`;
   participants.forEach((name) => {
@@ -246,19 +234,33 @@ app.event("app_mention", async ({ event, say, client }) => {
     )}\n`;
   });
 
-  await client.chat.update({
-    channel: event.channel,
-    ts: originalMessageTs,
-    text: messageText,
-  });
+  // Check if originalMessageTs is set
+  if (!originalMessageTs) {
+    console.error("Error: originalMessageTs is not set.");
+    await say(
+      "Error: Unable to update the message as originalMessageTs is not set."
+    );
+    return;
+  }
 
-  await client.reactions.add({
-    channel: event.channel,
-    name: "heart",
-    timestamp: event.ts,
-  });
+  try {
+    await client.chat.update({
+      channel: event.channel,
+      ts: originalMessageTs,
+      text: messageText,
+    });
 
-  await saveAttendanceRecordToDB(currentWeek);
+    await client.reactions.add({
+      channel: event.channel,
+      name: "heart",
+      timestamp: event.ts,
+    });
+
+    await saveAttendanceRecordToDB(currentWeek);
+  } catch (error) {
+    console.error("Error updating message:", error);
+    await say("There was an error updating the challenge message.");
+  }
 });
 
 app.message("챌린지 삭제", async ({ message, say }) => {
