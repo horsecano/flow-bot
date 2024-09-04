@@ -146,6 +146,10 @@ app.message("챌린지 수동", async ({ message, say }) => {
 app.event("app_mention", async ({ event, say, client }) => {
   try {
     const currentDate = DateTime.local().setZone("Asia/Seoul");
+    const eventDate = DateTime.fromSeconds(parseInt(event.ts.split(".")[0]), {
+      zone: "Asia/Seoul",
+    });
+
     const currentWeek = `Week ${currentDate.weekNumber}`;
     const messageTs = await loadMessageTsFromDB(currentWeek);
 
@@ -154,11 +158,15 @@ app.event("app_mention", async ({ event, say, client }) => {
       return;
     }
 
-    if (currentDate.hour >= 23 && currentDate.minute >= 59) {
+    if (
+      currentDate.day > eventDate.day ||
+      (currentDate.hour >= 0 && currentDate.hour < 1)
+    ) {
       await say({
         text: "오늘 챌린지 인증 마감 되었습니다.",
         thread_ts: event.ts,
       });
+
       return;
     }
 
@@ -245,6 +253,18 @@ app.message("챌린지 삭제", async ({ message, say }) => {
     await say("삭제할 챌린지 기록이 없습니다.");
   }
 });
+
+function logCurrentDateEverySecond() {
+  setInterval(() => {
+    const currentDate = DateTime.local().setZone("Asia/Seoul");
+
+    console.log(currentDate.hour);
+    console.log(currentDate.minute);
+    console.log(currentDate.weekday);
+  }, 1000); // 1000ms = 1 second
+}
+
+logCurrentDateEverySecond();
 
 (async () => {
   await app.start();
