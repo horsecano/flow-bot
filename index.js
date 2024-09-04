@@ -166,7 +166,8 @@ app.event("app_mention", async ({ event, say, client }) => {
         text: "오늘 챌린지 인증 마감 되었습니다.",
         thread_ts: event.ts,
       });
-
+      console.log(currentDate.day);
+      console.log(eventDate.day);
       return;
     }
 
@@ -253,18 +254,6 @@ app.message("챌린지 삭제", async ({ message, say }) => {
     await say("삭제할 챌린지 기록이 없습니다.");
   }
 });
-
-function logCurrentDateEverySecond() {
-  setInterval(() => {
-    const currentDate = DateTime.local().setZone("Asia/Seoul");
-
-    console.log(currentDate.hour);
-    console.log(currentDate.minute);
-    console.log(currentDate.weekday);
-  }, 1000); // 1000ms = 1 second
-}
-
-logCurrentDateEverySecond();
 
 (async () => {
   await app.start();
