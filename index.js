@@ -126,7 +126,7 @@ async function startDailyChallenge() {
   await saveMessageTsToDB(currentWeek, messageTs); // Save the timestamp to the database
 }
 
-cron.schedule("1 0 * * *", async () => {
+cron.schedule("1 15 * * *", async () => {
   const currentDate = DateTime.local().setZone("Asia/Seoul");
 
   if (currentDate.weekday === 1) {
@@ -136,11 +136,6 @@ cron.schedule("1 0 * * *", async () => {
   } else if (currentDate.weekday >= 2 && currentDate.weekday <= 5) {
     await startDailyChallenge(); // Continue with the current week's record
   }
-});
-
-app.message("챌린지 수동", async ({ message, say }) => {
-  console.log("Daily challenge triggered manually.");
-  await startDailyChallenge();
 });
 
 app.event("app_mention", async ({ event, say, client }) => {
@@ -208,8 +203,7 @@ app.event("app_mention", async ({ event, say, client }) => {
 
     const today = currentDate.weekday - 1;
     const week =
-      currentDate.weekNumber - currentDate.startOf("month").weekNumber + 1; // Correctly defining `week`
-    const day = currentDate.setLocale("ko").toFormat("cccc");
+      currentDate.weekNumber - currentDate.startOf("month").weekNumber + 1;
 
     attendanceRecord[currentWeek][userName][today] = "✅";
 
@@ -220,7 +214,6 @@ app.event("app_mention", async ({ event, say, client }) => {
       )}\n`;
     });
 
-    // Update the existing message with the updated attendance record
     await client.chat.update({
       channel: event.channel,
       ts: messageTs,
@@ -240,18 +233,35 @@ app.event("app_mention", async ({ event, say, client }) => {
   }
 });
 
-app.message("챌린지 삭제", async ({ message, say }) => {
+app.command("/챌린지시작", async ({ command, ack, say }) => {
+  await ack();
+  try {
+    console.log("Daily challenge triggered manually via slash command.");
+    await startDailyChallenge();
+  } catch (error) {
+    console.error("Error starting challenge:", error);
+    await say("챌린지를 시작하는 중 오류가 발생했습니다.");
+  }
+});
+
+app.command("/챌린지삭제", async ({ command, ack, say }) => {
+  await ack();
   const currentDate = DateTime.local().setZone("Asia/Seoul");
   const currentWeek = `Week ${currentDate.weekNumber}`;
   const collection = db.collection("attendanceRecords");
 
-  const result = await collection.deleteOne({ week: currentWeek });
+  try {
+    const result = await collection.deleteOne({ week: currentWeek });
 
-  if (result.deletedCount > 0) {
-    delete attendanceRecord[currentWeek];
-    await say("현재 주차의 챌린지 기록이 삭제되었습니다.");
-  } else {
-    await say("삭제할 챌린지 기록이 없습니다.");
+    if (result.deletedCount > 0) {
+      delete attendanceRecord[currentWeek];
+      await say("현재 주차의 챌린지 기록이 삭제되었습니다.");
+    } else {
+      await say("삭제할 챌린지 기록이 없습니다.");
+    }
+  } catch (error) {
+    console.error("Error deleting challenge record:", error);
+    await say("챌린지 기록 삭제 중 오류가 발생했습니다.");
   }
 });
 
