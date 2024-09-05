@@ -146,13 +146,19 @@ app.event("app_mention", async ({ event, say, client }) => {
     });
 
     const currentWeek = `Week ${currentDate.weekNumber}`;
-    const messageTs = await loadMessageTsFromDB(currentWeek);
+    let messageTs = await loadMessageTsFromDB(currentWeek);
 
+    // 챌린지 메시지의 타임스탬프가 없을 경우 새로운 메시지를 생성
     if (!messageTs) {
-      await say("챌린지 메시지가 없습니다. 새로운 메시지를 게시해야 합니다.");
-      return;
+      await say("챌린지 메시지가 없습니다. 새로운 메시지를 게시합니다.");
+
+      // 새로운 메시지 생성 및 타임스탬프 저장
+      const result = await startDailyChallenge(); // 새 메시지를 생성하고 ts 반환
+      messageTs = result.ts;
+      await saveMessageTsToDB(currentWeek, messageTs); // 새로운 ts를 저장
     }
 
+    // 인증이 마감되었는지 확인
     if (
       currentDate.day > eventDate.day ||
       (currentDate.hour >= 0 && currentDate.hour < 1)
@@ -161,11 +167,10 @@ app.event("app_mention", async ({ event, say, client }) => {
         text: "오늘 챌린지 인증 마감 되었습니다.",
         thread_ts: event.ts,
       });
-      console.log(currentDate.day);
-      console.log(eventDate.day);
       return;
     }
 
+    // 메시지에 링크가 있는지 확인
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const hasLink = urlRegex.test(event.text);
 
@@ -183,6 +188,7 @@ app.event("app_mention", async ({ event, say, client }) => {
 
     await loadAttendanceRecordFromDB(currentWeek);
 
+    // 챌린지가 시작되지 않았을 경우 처리
     if (!attendanceRecord[currentWeek]) {
       await say({
         text: "챌린지가 아직 시작되지 않았습니다. '챌린지 시작'을 입력하세요.",
@@ -193,6 +199,7 @@ app.event("app_mention", async ({ event, say, client }) => {
 
     const participants = Object.keys(attendanceRecord[currentWeek]);
 
+    // 참가자 이름 확인
     if (!participants.includes(userName)) {
       await say({
         text: "참가자 이름을 확인해 주세요.",
@@ -207,18 +214,37 @@ app.event("app_mention", async ({ event, say, client }) => {
 
     attendanceRecord[currentWeek][userName][today] = "✅";
 
-    let messageText = `${currentDate.month}월 ${week}주차 ${day} 인증 기록\n`;
+    // 메시지 업데이트
+    let messageText = `${currentDate.month}월 ${week}주차 인증 기록\n`;
     participants.forEach((name) => {
       messageText += `${name} : ${attendanceRecord[currentWeek][name].join(
         ""
       )}\n`;
     });
 
-    await client.chat.update({
-      channel: event.channel,
-      ts: messageTs,
-      text: messageText,
-    });
+    // try-catch 문으로 메시지 업데이트 오류 처리
+    try {
+      await client.chat.update({
+        channel: event.channel,
+        ts: messageTs,
+        text: messageText,
+      });
+    } catch (error) {
+      if (error.data && error.data.error === "message_not_found") {
+        // 메시지를 찾을 수 없을 때 새로운 메시지를 생성하고 업데이트
+        const result = await startDailyChallenge();
+        messageTs = result.ts;
+        await saveMessageTsToDB(currentWeek, messageTs); // 새로운 ts 저장
+
+        await client.chat.update({
+          channel: event.channel,
+          ts: messageTs,
+          text: messageText,
+        });
+      } else {
+        throw error; // 다른 오류는 그대로 던지기
+      }
+    }
 
     await client.reactions.add({
       channel: event.channel,
@@ -229,7 +255,7 @@ app.event("app_mention", async ({ event, say, client }) => {
     await saveAttendanceRecordToDB(currentWeek);
   } catch (error) {
     console.error("Error during the app_mention event:", error);
-    await say("챌린지 메시지를 업데이트하는 중 오류가 발생했습니다.");
+    await console.log("챌린지 메시지를 업데이트하는 중 오류가 발생했습니다.");
   }
 });
 
