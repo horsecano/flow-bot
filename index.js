@@ -145,7 +145,7 @@ cron.schedule("1 15 * * *", async () => {
     const channelId = "C07KE8YLERZ";
     const botUserId = "U07GELRJTNY";
     await initializeWeekRecord(channelId, botUserId); // Initialize new week's record
-  } else if (currentDate.weekday >= 2 && currentDate.weekday <= 5) {
+  } else {
     await startDailyChallenge(); // Continue with the current week's record
   }
 });
