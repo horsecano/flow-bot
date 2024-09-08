@@ -82,7 +82,15 @@ async function initializeWeekRecord(channelId, botUserId) {
   for (const participant of participants) {
     const userInfo = await app.client.users.info({ user: participant });
     const userName = userInfo.user.real_name;
-    attendanceRecord[currentWeek][userName] = ["❌", "❌", "❌", "❌", "❌"];
+    attendanceRecord[currentWeek][userName] = [
+      "❌",
+      "❌",
+      "❌",
+      "❌",
+      "❌",
+      "🔥",
+      "🔥",
+    ];
   }
 
   await saveAttendanceRecordToDB(currentWeek);
@@ -101,6 +109,11 @@ async function startDailyChallenge() {
     await initializeWeekRecord(channelId, botUserId);
   }
 
+  if (!attendanceRecord[currentWeek]) {
+    console.error("Failed to initialize attendance record.");
+    return;
+  }
+
   const month = currentDate.month;
   const week =
     currentDate.weekNumber - currentDate.startOf("month").weekNumber + 1;
@@ -116,7 +129,6 @@ async function startDailyChallenge() {
     ].join("")}\n`;
   });
 
-  // Post a new message for the daily challenge
   const result = await app.client.chat.postMessage({
     channel: "C07KE8YLERZ",
     text: messageText,
@@ -212,7 +224,8 @@ app.event("app_mention", async ({ event, say, client }) => {
     const week =
       currentDate.weekNumber - currentDate.startOf("month").weekNumber + 1;
 
-    attendanceRecord[currentWeek][userName][today] = "✅";
+    attendanceRecord[currentWeek][userName][today] =
+      currentDate.weekday === 6 || currentDate.weekday === 7 ? "❇️" : "✅";
 
     // 메시지 업데이트
     let messageText = `${currentDate.month}월 ${week}주차 인증 기록\n`;
