@@ -100,20 +100,24 @@ async function startDailyChallenge() {
   const currentDate = DateTime.local().setZone("Asia/Seoul");
   const currentWeek = `Week ${currentDate.weekNumber}`;
 
+  // 출석 기록 불러오기
   await loadAttendanceRecordFromDB(currentWeek);
 
+  // 출석 기록이 없으면 초기화
   if (!attendanceRecord[currentWeek]) {
     console.log("No existing attendance record found. Initializing a new one.");
-    const channelId = "C07KE8YLERZ";
-    const botUserId = "U07GELRJTNY";
+    const channelId = "C07KE8YLERZ"; // Slack 채널 ID
+    const botUserId = "U07GELRJTNY"; // 봇 사용자 ID
     await initializeWeekRecord(channelId, botUserId);
   }
 
+  // 출석 기록이 여전히 없으면 오류 처리
   if (!attendanceRecord[currentWeek]) {
     console.error("Failed to initialize attendance record.");
     return;
   }
 
+  // 출석 메시지 작성 및 전송
   const month = currentDate.month;
   const week =
     currentDate.weekNumber - currentDate.startOf("month").weekNumber + 1;
@@ -135,7 +139,7 @@ async function startDailyChallenge() {
   });
 
   const messageTs = result.ts;
-  await saveMessageTsToDB(currentWeek, messageTs); // Save the timestamp to the database
+  await saveMessageTsToDB(currentWeek, messageTs); // 타임스탬프 저장
 }
 
 cron.schedule("1 15 * * *", async () => {
