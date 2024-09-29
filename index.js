@@ -19,8 +19,6 @@ async function connectToMongoDB() {
   }
 }
 
-connectToMongoDB();
-
 const slackAppToken = process.env.SLACK_APP_TOKEN;
 const slackBotToken = process.env.SLACK_BOT_TOKEN;
 
@@ -31,6 +29,13 @@ const app = new App({
 });
 
 let attendanceRecord = {};
+
+// DB에서 현재 주차 기록을 로드하는 함수
+async function loadCurrentWeekRecord() {
+  const currentDate = DateTime.local().setZone("Asia/Seoul");
+  const currentWeek = `Week ${currentDate.weekNumber}`;
+  await loadAttendanceRecordFromDB(currentWeek);
+}
 
 async function saveAttendanceRecordToDB(week) {
   const collection = db.collection("attendanceRecords");
@@ -140,6 +145,7 @@ async function startDailyChallenge() {
 
   const messageTs = result.ts;
   await saveMessageTsToDB(currentWeek, messageTs); // 타임스탬프 저장
+  await saveAttendanceRecordToDB(currentWeek); // DB에 출석 기록 저장
 }
 
 cron.schedule("1 15 * * *", async () => {
@@ -148,9 +154,9 @@ cron.schedule("1 15 * * *", async () => {
   if (currentDate.weekday === 1) {
     const channelId = "C07KE8YLERZ";
     const botUserId = "U07GELRJTNY";
-    await initializeWeekRecord(channelId, botUserId); // Initialize new week's record
+    await initializeWeekRecord(channelId, botUserId);
   } else {
-    await startDailyChallenge(); // Continue with the current week's record
+    await startDailyChallenge();
   }
 });
 
@@ -167,8 +173,6 @@ app.event("app_mention", async ({ event, say, client }) => {
     // 챌린지 메시지의 타임스탬프가 없을 경우 새로운 메시지를 생성
     if (!messageTs) {
       await say("챌린지 메시지가 없습니다. 새로운 메시지를 게시합니다.");
-
-      // 새로운 메시지 생성 및 타임스탬프 저장
       const result = await startDailyChallenge(); // 새 메시지를 생성하고 ts 반환
       messageTs = result.ts;
       await saveMessageTsToDB(currentWeek, messageTs); // 새로운 ts를 저장
@@ -248,7 +252,6 @@ app.event("app_mention", async ({ event, say, client }) => {
       });
     } catch (error) {
       if (error.data && error.data.error === "message_not_found") {
-        // 메시지를 찾을 수 없을 때 새로운 메시지를 생성하고 업데이트
         const result = await startDailyChallenge();
         messageTs = result.ts;
         await saveMessageTsToDB(currentWeek, messageTs); // 새로운 ts 저장
@@ -269,7 +272,7 @@ app.event("app_mention", async ({ event, say, client }) => {
       timestamp: event.ts,
     });
 
-    await saveAttendanceRecordToDB(currentWeek);
+    await saveAttendanceRecordToDB(currentWeek); // DB에 출석 기록 저장
   } catch (error) {
     console.error("Error during the app_mention event:", error);
     await console.log("챌린지 메시지를 업데이트하는 중 오류가 발생했습니다.");
@@ -309,6 +312,8 @@ app.command("/챌린지삭제", async ({ command, ack, say }) => {
 });
 
 (async () => {
+  await connectToMongoDB();
+  await loadCurrentWeekRecord(); // 앱 시작 시 현재 주차의 기록을 DB에서 로드
   await app.start();
   console.log("⚡️ Slack Bolt app is running!");
 })();
