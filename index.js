@@ -38,12 +38,17 @@ async function loadCurrentWeekRecord() {
 }
 
 async function saveAttendanceRecordToDB(week) {
-  const collection = db.collection("attendanceRecords");
-  await collection.updateOne(
-    { week: week },
-    { $set: { records: attendanceRecord[week] } },
-    { upsert: true }
-  );
+  try {
+    const collection = db.collection("attendanceRecords");
+    const result = await collection.updateOne(
+      { week: week },
+      { $set: { records: attendanceRecord[week] } },
+      { upsert: true }
+    );
+    console.log("Attendance record saved to DB for week:", week);
+  } catch (error) {
+    console.error("Error saving attendance record to DB for week", week, error);
+  }
 }
 
 async function loadAttendanceRecordFromDB(week) {
@@ -91,10 +96,9 @@ async function loadMessageTsFromDB(week) {
 }
 
 async function initializeWeekRecord(channelId, botUserId) {
-  const currentDate = DateTime.local();
+  const currentDate = DateTime.local().setZone("Asia/Seoul");
   const currentWeek = `Week ${currentDate.weekNumber}`;
   attendanceRecord[currentWeek] = {};
-
   try {
     const membersResponse = await app.client.conversations.members({
       token: slackBotToken,
@@ -104,7 +108,6 @@ async function initializeWeekRecord(channelId, botUserId) {
     const participants = membersResponse.members.filter(
       (id) => id !== botUserId
     );
-    console.log(participants);
     for (const participant of participants) {
       const userInfo = await app.client.users.info({ user: participant });
       const userName = userInfo.user.real_name;
