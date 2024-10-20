@@ -53,9 +53,27 @@ async function loadAttendanceRecordFromDB(week) {
   if (record) {
     attendanceRecord[week] = record.records;
   } else {
-    attendanceRecord[week] = null;
+    // 기록이 없을 경우 빈 객체로 설정
+    attendanceRecord[week] = {};
+    console.log("No record found for", week, "initializing empty attendance.");
   }
 }
+
+const generateMessageText = (attendanceRecord, currentDate) => {
+  const month = currentDate.month;
+  const week =
+    currentDate.weekNumber - currentDate.startOf("month").weekNumber + 1;
+  const day = currentDate.setLocale("ko").toFormat("cccc");
+
+  let messageText = `${month}월 ${week}주차 ${day} 인증 기록\n`;
+
+  const participants = Object.keys(attendanceRecord);
+  participants.forEach((userName) => {
+    messageText += `${userName} : ${attendanceRecord[userName].join("")}\n`;
+  });
+
+  return messageText;
+};
 
 async function saveMessageTsToDB(week, ts) {
   const collection = db.collection("messageTimestamps");
@@ -77,28 +95,35 @@ async function initializeWeekRecord(channelId, botUserId) {
   const currentWeek = `Week ${currentDate.weekNumber}`;
   attendanceRecord[currentWeek] = {};
 
-  const membersResponse = await app.client.conversations.members({
-    token: slackBotToken,
-    channel: channelId,
-  });
+  try {
+    const membersResponse = await app.client.conversations.members({
+      token: slackBotToken,
+      channel: channelId,
+    });
 
-  const participants = membersResponse.members.filter((id) => id !== botUserId);
+    const participants = membersResponse.members.filter(
+      (id) => id !== botUserId
+    );
+    console.log(participants);
+    for (const participant of participants) {
+      const userInfo = await app.client.users.info({ user: participant });
+      const userName = userInfo.user.real_name;
+      attendanceRecord[currentWeek][userName] = [
+        "❌",
+        "❌",
+        "❌",
+        "❌",
+        "❌",
+        "🔥",
+        "🔥",
+      ];
+    }
 
-  for (const participant of participants) {
-    const userInfo = await app.client.users.info({ user: participant });
-    const userName = userInfo.user.real_name;
-    attendanceRecord[currentWeek][userName] = [
-      "❌",
-      "❌",
-      "❌",
-      "❌",
-      "❌",
-      "🔥",
-      "🔥",
-    ];
+    await saveAttendanceRecordToDB(currentWeek);
+    console.log("Attendance record initialized for current week:", currentWeek);
+  } catch (error) {
+    console.error("Error initializing week record:", error);
   }
-
-  await saveAttendanceRecordToDB(currentWeek);
 }
 
 async function startDailyChallenge() {
@@ -109,15 +134,21 @@ async function startDailyChallenge() {
   await loadAttendanceRecordFromDB(currentWeek);
 
   // 출석 기록이 없으면 초기화
-  if (!attendanceRecord[currentWeek]) {
+  if (
+    !attendanceRecord[currentWeek] ||
+    Object.keys(attendanceRecord[currentWeek]).length === 0
+  ) {
     console.log("No existing attendance record found. Initializing a new one.");
-    const channelId = "C07KE8YLERZ"; // Slack 채널 ID
-    const botUserId = "U07GELRJTNY"; // 봇 사용자 ID
+    const channelId = "C07KE8YLERZ"; // Slack channel ID
+    const botUserId = "U07GELRJTNY"; // Bot user ID
     await initializeWeekRecord(channelId, botUserId);
   }
 
   // 출석 기록이 여전히 없으면 오류 처리
-  if (!attendanceRecord[currentWeek]) {
+  if (
+    !attendanceRecord[currentWeek] ||
+    Object.keys(attendanceRecord[currentWeek]).length === 0
+  ) {
     console.error("Failed to initialize attendance record.");
     return;
   }
@@ -228,27 +259,23 @@ app.event("app_mention", async ({ event, say, client }) => {
       return;
     }
 
+    // Update attendance record for the current day
     const today = currentDate.weekday - 1;
-    const week =
-      currentDate.weekNumber - currentDate.startOf("month").weekNumber + 1;
-
     attendanceRecord[currentWeek][userName][today] =
       currentDate.weekday === 6 || currentDate.weekday === 7 ? "❇️" : "✅";
 
-    // 메시지 업데이트
-    let messageText = `${currentDate.month}월 ${week}주차 인증 기록\n`;
-    participants.forEach((name) => {
-      messageText += `${name} : ${attendanceRecord[currentWeek][name].join(
-        ""
-      )}\n`;
-    });
+    // Generate updated message text
+    const updatedMessage = generateMessageText(
+      attendanceRecord[currentWeek],
+      currentDate
+    );
 
     // try-catch 문으로 메시지 업데이트 오류 처리
     try {
       await client.chat.update({
         channel: event.channel,
         ts: messageTs,
-        text: messageText,
+        text: updatedMessage, // Update the message with correct format
       });
     } catch (error) {
       if (error.data && error.data.error === "message_not_found") {
@@ -259,7 +286,7 @@ app.event("app_mention", async ({ event, say, client }) => {
         await client.chat.update({
           channel: event.channel,
           ts: messageTs,
-          text: messageText,
+          text: updatedMessage, // Ensure the format is maintained in the new message
         });
       } else {
         throw error; // 다른 오류는 그대로 던지기
